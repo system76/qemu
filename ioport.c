@@ -38,35 +38,24 @@ typedef struct MemoryRegionPortioList {
     MemoryRegionPortio ports[];
 } MemoryRegionPortioList;
 
+#include "ecsim.c"
+
 static uint64_t unassigned_io_read(void *opaque, hwaddr addr, unsigned size)
 {
-    uint64_t val = -1ULL;
     if (addr == 0x62 || addr == 0x66) {
-        if (addr == 0x62) {
-            val = 0ULL;
-        } else if (addr == 0x66) {
-            val = 1ULL;
-        }
-        fprintf(
-            stderr,
-            "read  0x%02lX = 0x%02lX\n",
-            addr,
-            val
-        );
+        assert(size == 1);
+        return (uint64_t)ec_global_io_read((uint8_t)addr);
     }
-    return val;
+    return -1ULL;
 }
 
 static void unassigned_io_write(void *opaque, hwaddr addr, uint64_t val,
                                 unsigned size)
 {
     if (addr == 0x62 || addr == 0x66) {
-        fprintf(
-            stderr,
-            "write 0x%02lX = 0x%02lX\n",
-            addr,
-            val
-        );
+        assert((val & 0xFF) == val);
+        assert(size == 1);
+        ec_global_io_write((uint8_t)addr, (uint8_t)val);
     }
 }
 
