@@ -40,12 +40,34 @@ typedef struct MemoryRegionPortioList {
 
 static uint64_t unassigned_io_read(void *opaque, hwaddr addr, unsigned size)
 {
-    return -1ULL;
+    uint64_t val = -1ULL;
+    if (addr == 0x62 || addr == 0x66) {
+        if (addr == 0x62) {
+            val = 0ULL;
+        } else if (addr == 0x66) {
+            val = 1ULL;
+        }
+        fprintf(
+            stderr,
+            "read  0x%02lX = 0x%02lX\n",
+            addr,
+            val
+        );
+    }
+    return val;
 }
 
 static void unassigned_io_write(void *opaque, hwaddr addr, uint64_t val,
                                 unsigned size)
 {
+    if (addr == 0x62 || addr == 0x66) {
+        fprintf(
+            stderr,
+            "write 0x%02lX = 0x%02lX\n",
+            addr,
+            val
+        );
+    }
 }
 
 const MemoryRegionOps unassigned_io_ops = {
