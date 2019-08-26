@@ -42,7 +42,7 @@ typedef struct MemoryRegionPortioList {
 
 static uint64_t unassigned_io_read(void *opaque, hwaddr addr, unsigned size)
 {
-    if (addr == 0x62 || addr == 0x66) {
+    if (addr == 0x2e || addr == 0x2f || addr == 0x62 || addr == 0x66) {
         assert(size == 1);
         return (uint64_t)ec_global_io_read((uint8_t)addr);
     }
@@ -52,7 +52,7 @@ static uint64_t unassigned_io_read(void *opaque, hwaddr addr, unsigned size)
 static void unassigned_io_write(void *opaque, hwaddr addr, uint64_t val,
                                 unsigned size)
 {
-    if (addr == 0x62 || addr == 0x66) {
+    if (addr == 0x2e || addr == 0x2f || addr == 0x62 || addr == 0x66) {
         assert((val & 0xFF) == val);
         assert(size == 1);
         ec_global_io_write((uint8_t)addr, (uint8_t)val);

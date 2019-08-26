@@ -16,6 +16,11 @@ enum State {
 };
 
 struct Ec {
+    uint8_t superio_addr_port;
+    uint8_t superio_addr;
+    uint8_t superio_data_port;
+    uint8_t superio_data[256];
+
     uint8_t data_port;
     uint8_t data;
     uint8_t cmd_port;
@@ -38,6 +43,11 @@ struct Ec {
 
 static struct Ec ec_new(void) {
     struct Ec ec = {
+        .superio_addr_port = 0x2e,
+        .superio_addr = 0x00,
+        .superio_data_port = 0x2f,
+        .superio_data = {0},
+
         .data_port = 0x62,
         .data = 0,
         .cmd_port = 0x66,
@@ -57,6 +67,10 @@ static struct Ec ec_new(void) {
         .spi_jedec = {0xFF, 0xFF, 0xFE, 0xFF},
         .spi_jedec_i = 0,
     };
+
+    // Set EC ID to 8587
+    ec.superio_data[0x20] = 0x85;
+    ec.superio_data[0x21] = 0x87;
 
     // Set ADP (0x01) and BAT0 (0x04)
     ec.acpi_space[0x10] = 0x05;
@@ -135,16 +149,22 @@ static uint8_t ec_io_read(struct Ec * ec, uint8_t addr) {
     }
 
     uint8_t val = 0;
-    if (addr == ec->data_port) {
+    if (addr == ec->superio_addr_port) {
+        val = ec->superio_addr;
+        printf("read superio addr 0x%02X\n", val);
+    } else if (addr == ec->superio_data_port) {
+        val = ec->superio_data[ec->superio_addr];
+        printf("read superio data 0x%02X = 0x%02X\n", ec->superio_addr, val);
+    } else if (addr == ec->data_port) {
         val = ec->data;
         ec->data = 0;
         ec->cmd &= ~1;
-
         printf("read data:     0x%02X\n", val);
     } else if (addr == ec->cmd_port) {
         val = ec->cmd;
-
         // printf("read cmd:     0x%02X\n", val);
+    } else {
+        printf("read unsupported 0x%02X\n", addr);
     }
 
     return val;
@@ -153,7 +173,13 @@ static uint8_t ec_io_read(struct Ec * ec, uint8_t addr) {
 static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
     assert(ec != NULL);
 
-    if (addr == ec->data_port) {
+    if (addr == ec->superio_addr_port) {
+        ec->superio_addr = val;
+        printf("write superio addr 0x%02X\n", val);
+    } else if (addr == ec->superio_data_port) {
+        ec->superio_data[ec->superio_addr] = val;
+        printf("write superio data 0x%02X = 0x%02X\n", ec->superio_addr, val);
+    } else if (addr == ec->data_port) {
         printf("write data:    0x%02X", val);
 
         switch (ec->state) {
@@ -366,6 +392,8 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
         }
 
         printf("\n");
+    } else {
+        printf("write unsupported 0x%02X: 0x%02X\n", addr, val);
     }
 }
 
