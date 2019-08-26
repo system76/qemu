@@ -13,6 +13,9 @@ enum State {
     STATE_SPI_WRITE_STATUS_DATA,
     STATE_SPI_SECTOR_ERASE,
     STATE_SPI_SECTOR_ERASE_ADDRESS,
+    STATE_SPI_HS_READ,
+    STATE_SPI_HS_READ_ADDRESS,
+    STATE_SPI_HS_READ_DATA,
 };
 
 struct Ec {
@@ -217,6 +220,8 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
         case STATE_SPI_READ_JEDEC:
         case STATE_SPI_WRITE_STATUS:
         case STATE_SPI_SECTOR_ERASE:
+        case STATE_SPI_HS_READ:
+        case STATE_SPI_HS_READ_DATA:
             switch(val) {
             case 0x01:
                 ec->state = STATE_SPI_FOLLOW;
@@ -237,6 +242,10 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                     ec->state = STATE_SPI_SECTOR_ERASE_ADDRESS;
                     printf(" (sector erase)");
                     break;
+                case STATE_SPI_HS_READ:
+                    ec->state = STATE_SPI_HS_READ_ADDRESS;
+                    printf(" (high speed read)");
+                    break;
                 default:
                     printf(" (unsupported)");
                     break;
@@ -256,6 +265,11 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                         ec->cmd |= 1;
                     }
                     printf(" (read jedec)");
+                    break;
+                case STATE_SPI_HS_READ_DATA:
+                    ec->data = 0xFF;
+                    ec->cmd |= 1;
+                    printf(" (high speed read 0x%08X)", 0);
                     break;
                 default:
                     printf(" (unsupported)");
@@ -292,6 +306,26 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                 ec->state = STATE_SPI_FOLLOW;
             }
             break;
+        case STATE_SPI_HS_READ_ADDRESS:
+            if (ec->spi_addr_i == 0) {
+                ec->state = STATE_SPI_HS_READ_DATA;
+                printf(" (spi high speed read dummy)");
+            } else {
+                ec->state = STATE_SPI_HS_READ;
+                if (ec->spi_addr_i > 0) {
+                    ec->spi_addr[--ec->spi_addr_i] = val;
+                    printf(" (spi high speed read %i = 0x%02X)", ec->spi_addr_i, val);
+                }
+                if (ec->spi_addr_i == 0) {
+                    uint32_t address =
+                        (uint32_t)ec->spi_addr[0] |
+                        ((uint32_t)ec->spi_addr[1] << 8) |
+                        ((uint32_t)ec->spi_addr[2] << 16) |
+                        ((uint32_t)ec->spi_addr[3] << 24);
+                    printf(" (spi high speed read 0x%08X)", address);
+                }
+            }
+            break;
         case STATE_SPI_COMMAND:
             printf(" (spi command)");
             switch (val) {
@@ -313,8 +347,17 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                 ec->spi_sts |= 2;
                 printf(" (write enable)");
                 break;
+            case 0x0B:
+                ec->state = STATE_SPI_HS_READ;
+                ec->spi_addr[0] = 0;
+                ec->spi_addr[1] = 0;
+                ec->spi_addr[2] = 0;
+                ec->spi_addr[3] = 0;
+                ec->spi_addr_i = 3;
+                printf(" (high speed read)");
+                break;
             case 0x20:
-            case 0xd7:
+            case 0xD7:
                 ec->state = STATE_SPI_SECTOR_ERASE;
                 ec->spi_addr[0] = 0;
                 ec->spi_addr[1] = 0;
@@ -327,6 +370,10 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                 ec->state = STATE_SPI_READ_JEDEC;
                 ec->spi_jedec_i = 0;
                 printf(" (read jedec)");
+                break;
+            case 0xAD:
+                ec->state = STATE_SPI_AAI_PROGRAM:
+                printf(" (aai program)");
                 break;
             default:
                 printf(" (unsupported)");
