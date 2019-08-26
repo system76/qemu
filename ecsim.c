@@ -261,7 +261,8 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                     (uint32_t)ec->spi_addr[0] |
                     ((uint32_t)ec->spi_addr[1] << 8) |
                     ((uint32_t)ec->spi_addr[2] << 16) |
-                    ((uint32_t)ec->spi_addr[3] << 24)
+                    ((uint32_t)ec->spi_addr[3] << 24);
+                printf(" (spi sector erase 0x%08X)", address);
                 ec->state = STATE_SPI_FOLLOW;
             }
             break;
