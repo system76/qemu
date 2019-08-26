@@ -11,6 +11,8 @@ enum State {
     STATE_SPI_READ_JEDEC,
     STATE_SPI_WRITE_STATUS,
     STATE_SPI_WRITE_STATUS_DATA,
+    STATE_SPI_SECTOR_ERASE,
+    STATE_SPI_SECTOR_ERASE_ADDRESS,
 };
 
 struct Ec {
@@ -28,6 +30,8 @@ struct Ec {
     uint8_t version_i;
 
     uint8_t spi_sts;
+    uint8_t spi_addr[4];
+    uint8_t spi_addr_i;
     uint8_t spi_jedec[4];
     uint8_t spi_jedec_i;
 };
@@ -48,6 +52,8 @@ static struct Ec ec_new(void) {
         .version_i = 0,
 
         .spi_sts = 0x1C,
+        .spi_addr = {0x00, 0x00, 0x00, 0x00},
+        .spi_addr_i = 0,
         .spi_jedec = {0xFF, 0xFF, 0xFE, 0xFF},
         .spi_jedec_i = 0,
     };
@@ -184,6 +190,7 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
         case STATE_SPI_READ_STATUS:
         case STATE_SPI_READ_JEDEC:
         case STATE_SPI_WRITE_STATUS:
+        case STATE_SPI_SECTOR_ERASE:
             switch(val) {
             case 0x01:
                 ec->state = STATE_SPI_FOLLOW;
@@ -199,6 +206,10 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                 case STATE_SPI_WRITE_STATUS:
                     ec->state = STATE_SPI_WRITE_STATUS_DATA;
                     printf(" (write status)");
+                    break;
+                case STATE_SPI_SECTOR_ERASE:
+                    ec->state = STATE_SPI_SECTOR_ERASE_ADDRESS;
+                    printf(" (sector erase)");
                     break;
                 default:
                     printf(" (unsupported)");
@@ -239,6 +250,21 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
             printf(" (spi write status 0x%02X)", val);
             ec->spi_sts = val; //TODO: Do not allow overwrite of read only flags
             break;
+        case STATE_SPI_SECTOR_ERASE_ADDRESS:
+            ec->state = STATE_SPI_SECTOR_ERASE;
+            if (ec->spi_addr_i > 0) {
+                ec->spi_addr[--ec->spi_addr_i] = val;
+                printf(" (spi sector erase %i = 0x%02X)", ec->spi_addr_i, val);
+            }
+            if (ec->spi_addr_i == 0) {
+                uint32_t address =
+                    (uint32_t)ec->spi_addr[0] |
+                    ((uint32_t)ec->spi_addr[1] << 8) |
+                    ((uint32_t)ec->spi_addr[2] << 16) |
+                    ((uint32_t)ec->spi_addr[3] << 24)
+                ec->state = STATE_SPI_FOLLOW;
+            }
+            break;
         case STATE_SPI_COMMAND:
             printf(" (spi command)");
             switch (val) {
@@ -259,6 +285,16 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                 ec->state = STATE_SPI_FOLLOW;
                 ec->spi_sts |= 2;
                 printf(" (write enable)");
+                break;
+            case 0x20:
+            case 0xd7:
+                ec->state = STATE_SPI_SECTOR_ERASE;
+                ec->spi_addr[0] = 0;
+                ec->spi_addr[1] = 0;
+                ec->spi_addr[2] = 0;
+                ec->spi_addr[3] = 0;
+                ec->spi_addr_i = 3;
+                printf(" (sector erase)");
                 break;
             case 0x9F:
                 ec->state = STATE_SPI_READ_JEDEC;
