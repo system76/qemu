@@ -16,6 +16,7 @@ enum State {
     STATE_SPI_HS_READ,
     STATE_SPI_HS_READ_ADDRESS,
     STATE_SPI_HS_READ_DATA,
+    STATE_SPI_AAI_PROGRAM,
 };
 
 struct Ec {
@@ -372,7 +373,7 @@ static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
                 printf(" (read jedec)");
                 break;
             case 0xAD:
-                ec->state = STATE_SPI_AAI_PROGRAM:
+                ec->state = STATE_SPI_AAI_PROGRAM;
                 printf(" (aai program)");
                 break;
             default:
