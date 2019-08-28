@@ -1,3 +1,11 @@
+#define USE_EC_LLE 1
+
+enum LleRequest {
+    LLE_REQUEST_INIT = 0x00,
+    LLE_REQUEST_READ = 0x01,
+    LLE_REQUEST_WRITE = 0x02,
+};
+
 enum State {
     STATE_NONE,
     STATE_GET_ACPI,
@@ -43,7 +51,44 @@ struct Ec {
     uint8_t spi_addr_i;
     uint8_t spi_jedec[4];
     uint8_t spi_jedec_i;
+
+    int lle_socket;
 };
+
+static int ec_lle_request(struct Ec * ec, enum LleRequest lle_request, uint8_t addr, uint8_t * value) {
+    assert(ec != NULL);
+    assert(value != NULL);
+
+    if (ec->lle_socket >= 0) {
+        uint8_t request[3] = { (uint8_t)lle_request, addr, *value };
+        if (send(ec->lle_socket, request, sizeof(request), 0) >= (int)sizeof(request)) {
+            uint8_t response[1] = { 0 };
+            if (recv(ec->lle_socket, response, sizeof(response), 0) >= (int)sizeof(response)) {
+                *value = response[0];
+
+                // printf(
+                //     "ec_lle_request(0x%02X, 0x%02X, 0x%02X) = 0x%02X\n",
+                //     request[0],
+                //     request[1],
+                //     request[2],
+                //     response[0]
+                // );
+
+                return 1;
+            } else {
+                perror("ec_lle_io: recv");
+                close(ec->lle_socket);
+                ec->lle_socket = -1;
+            }
+        } else {
+            perror("ec_lle_io: send");
+            close(ec->lle_socket);
+            ec->lle_socket = -1;
+        }
+    }
+
+    return -1;
+}
 
 static struct Ec ec_new(void) {
     struct Ec ec = {
@@ -70,6 +115,8 @@ static struct Ec ec_new(void) {
         .spi_addr_i = 0,
         .spi_jedec = {0xFF, 0xFF, 0xFE, 0xFF},
         .spi_jedec_i = 0,
+
+        .lle_socket = -1,
     };
 
     // Set EC ID to 8587
@@ -82,8 +129,44 @@ static struct Ec ec_new(void) {
     // Set size to 128K
     ec.acpi_space[0xE5] = 0x80;
 
+    // Attempt to connect to low-level emulation socket
+    #if USE_EC_LLE
+        int lle_socket = socket(AF_INET, SOCK_DGRAM, 0);
+        if (lle_socket >= 0) {
+            struct sockaddr_in addr;
+            bzero(&addr, sizeof(addr));
+            addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+            addr.sin_port = htons(8587);
+            addr.sin_family = AF_INET;
+            if (connect(lle_socket, (struct sockaddr *)&addr, sizeof(addr)) >= 0) {
+                ec.lle_socket = lle_socket;
+
+                uint8_t val = 0;
+                ec_lle_request(&ec, LLE_REQUEST_INIT, 0, &val);
+            } else {
+                perror("connect");
+                close(lle_socket);
+            }
+        } else {
+            perror("socket");
+        }
+    #endif
+
+    if (ec.lle_socket >= 0) {
+        printf("EC using low-level emulation\n");
+    } else {
+        printf("EC using high-level emulation\n");
+    }
+
     return ec;
 }
+
+// static void ec_drop(struct Ec * ec) {
+//     if (ec->lle_socket >= 0) {
+//         close(ec->lle_socket);
+//         ec->lle_socket = -1;
+//     }
+// }
 
 static void ec_acpi_cmd(struct Ec * ec) {
     assert(ec != NULL);
@@ -127,6 +210,11 @@ static void ec_acpi_cmd(struct Ec * ec) {
 static uint8_t ec_io_read(struct Ec * ec, uint8_t addr) {
     assert(ec != NULL);
 
+    uint8_t val = 0;
+    if (ec_lle_request(ec, LLE_REQUEST_READ, addr, &val) >= 0) {
+        return val;
+    }
+
     switch (ec->state) {
     case STATE_GET_PROJECT:
         if ((ec->cmd & 1) == 0) {
@@ -152,7 +240,6 @@ static uint8_t ec_io_read(struct Ec * ec, uint8_t addr) {
         break;
     }
 
-    uint8_t val = 0;
     if (addr == ec->superio_addr_port) {
         val = ec->superio_addr;
         printf("read superio addr 0x%02X\n", val);
@@ -176,6 +263,10 @@ static uint8_t ec_io_read(struct Ec * ec, uint8_t addr) {
 
 static void ec_io_write(struct Ec * ec, uint8_t addr, uint8_t val) {
     assert(ec != NULL);
+
+    if (ec_lle_request(ec, LLE_REQUEST_WRITE, addr, &val) >= 0) {
+        return;
+    }
 
     if (addr == ec->superio_addr_port) {
         ec->superio_addr = val;
