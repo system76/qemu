@@ -55,12 +55,12 @@ struct Ec {
     int lle_socket;
 };
 
-static int ec_lle_request(struct Ec * ec, enum LleRequest lle_request, uint8_t addr, uint8_t * value) {
+static int ec_lle_request(struct Ec * ec, enum LleRequest lle_request, uint16_t addr, uint8_t * value) {
     assert(ec != NULL);
     assert(value != NULL);
 
     if (ec->lle_socket >= 0) {
-        uint8_t request[3] = { (uint8_t)lle_request, addr, *value };
+        uint8_t request[4] = { (uint8_t)lle_request, (uint8_t)addr, (uint8_t)(addr >> 8), *value };
         if (send(ec->lle_socket, request, sizeof(request), 0) >= (int)sizeof(request)) {
             uint8_t response[1] = { 0 };
             if (recv(ec->lle_socket, response, sizeof(response), 0) >= (int)sizeof(response)) {
